@@ -13,18 +13,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
+      - name: Set up Node.js 18
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-          cache: 'npm'
 
-      - name: Set up Python
+      - name: Set up Python 3.x
         uses: actions/setup-python@v4
         with:
           python-version: '3.x'
 
-      - name: Set up Go
+      - name: Set up Go 1.20
         uses: actions/setup-go@v4
         with:
           go-version: '1.20'
@@ -34,25 +33,33 @@ jobs:
           echo "Repository root:"
           ls -la
 
-      - name: Install & build (Node.js)
-        if: contains(fromJSON('["package.json"]'), 'package.json') || fileExists('package.json')
+      - name: Install dependencies and build (multi-language)
         run: |
+          set -e
+
+          echo "Repository contents:"
+          ls -la || true
+
+          # Node.js
           if [ -f package.json ]; then
-            echo "Detected package.json — running Node install/build/test if present"
-            npm ci || npm install
-            if npm run | sed -n '1,200p' | grep -q "build"; then
+            echo ""
+            echo "Detected Node.js project (package.json found)"
+            npm ci || npm install || true
+            if npm run | grep -q " build"; then
+              echo "Running npm run build"
               npm run build || true
             fi
             if npm test --silent 2>/dev/null; then
+              echo "Running npm test"
               npm test || true
             fi
           else
-            echo "No package.json found"
+            echo "No package.json found, skipping Node steps"
           fi
 
-      - name: Install & build (Python)
-        run: |
+          # Python
           if [ -f requirements.txt ] || [ -f pyproject.toml ] || [ -f setup.py ]; then
+            echo ""
             echo "Detected Python project"
             python -m pip install --upgrade pip
             if [ -f requirements.txt ]; then
@@ -73,31 +80,28 @@ jobs:
             echo "No Python packaging files detected"
           fi
 
-      - name: Install & build (Go)
-        run: |
+          # Go
           if ls *.go >/dev/null 2>&1 || [ -d cmd ]; then
+            echo ""
             echo "Detected Go project"
             go version
-            go env GOPATH GOMODCACHE || true
+            go env
             go build ./... || true
             go test ./... || true
           else
             echo "No Go files detected"
           fi
 
-      - name: Makefile targets
-        if: ${{ always() }}
-        run: |
+          # Makefile
           if [ -f Makefile ]; then
-            echo "Makefile found — running build/test if present"
-            if grep -qE '^build:' Makefile; then
+            echo ""
+            echo "Makefile found — running common targets if present"
+            if grep -q "^build:" Makefile; then
               make build || true
             fi
-            if grep -qE '^test:' Makefile; then
+            if grep -q "^test:" Makefile; then
               make test || true
             fi
-          else
-            echo "No Makefile found"
           fi
 
       - name: Collect common artifact paths
@@ -118,6 +122,10 @@ jobs:
           echo "::set-output name=paths::$paths"
 
       - name: Upload build artifacts (if any)
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: ${{ steps.collect.outputs.paths }}
         uses: actions/upload-artifact@v4
         with:
           name: build-output
