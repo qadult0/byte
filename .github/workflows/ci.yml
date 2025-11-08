@@ -13,18 +13,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js 18 (if present)
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
           cache: 'npm'
 
-      - name: Set up Python 3.x (if present)
+      - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.x'
 
-      - name: Set up Go 1.20 (if present)
+      - name: Set up Go
         uses: actions/setup-go@v4
         with:
           go-version: '1.20'
@@ -34,23 +34,37 @@ jobs:
           echo "Repository root:"
           ls -la
 
-      - name: Detect languages and build/test
+      - name: Detect languages and install/build/test
         run: |
           set -e
-
           echo "Repository contents:"
           ls -la || true
 
-          # Node.js
+          # NODE: prefer lockfile installs, fall back to normal install
           if [ -f package.json ]; then
             echo ""
             echo "Detected Node.js project (package.json found)"
-            npm ci || npm install || true
-            # run build if script exists
+            if [ -f package-lock.json ]; then
+              echo "Found package-lock.json → running: npm ci"
+              npm ci
+            elif [ -f pnpm-lock.yaml ]; then
+              echo "Found pnpm-lock.yaml → running: pnpm install --frozen-lockfile"
+              npm i -g pnpm || true
+              pnpm install --frozen-lockfile || pnpm install
+            elif [ -f yarn.lock ]; then
+              echo "Found yarn.lock → running: yarn install --frozen-lockfile"
+              yarn install --frozen-lockfile || yarn install
+            else
+              echo "No lockfile found → running: npm install (will create package-lock.json locally)"
+              npm install
+            fi
+
+            # build if script exists
             if npm run | sed -n '1,200p' | grep -q " build"; then
               echo "Running npm run build"
               npm run build || true
             fi
+
             # run tests if any
             if npm test --silent 2>/dev/null; then
               echo "Running npm test"
@@ -60,7 +74,7 @@ jobs:
             echo "No package.json found, skipping Node steps"
           fi
 
-          # Python
+          # PYTHON
           if [ -f requirements.txt ] || [ -f pyproject.toml ] || [ -f setup.py ]; then
             echo ""
             echo "Detected Python project"
@@ -83,7 +97,7 @@ jobs:
             echo "No Python packaging files detected"
           fi
 
-          # Go
+          # GO
           if ls *.go >/dev/null 2>&1 || [ -d cmd ]; then
             echo ""
             echo "Detected Go project"
@@ -116,7 +130,6 @@ jobs:
               paths="$paths $p"
             fi
           done
-          # include common archives
           for a in *.tar.gz *.zip *.exe; do
             if ls $a >/dev/null 2>&1; then
               paths="$paths $a"
