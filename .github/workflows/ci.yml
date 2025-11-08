@@ -14,19 +14,37 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
+      - name: Find lockfiles (for caching)
+        id: find-lockfiles
+        run: |
+          echo "Searching for lockfiles..."
+          files=$(find . -type f \( -name 'package-lock.json' -o -name 'pnpm-lock.yaml' -o -name 'yarn.lock' -o -name 'npm-shrinkwrap.json' \) -print | sed 's|^\./||')
+          if [ -n "$files" ]; then
+            echo "Found lockfiles:"
+            printf "%s\n" "$files"
+            # Write a multiline output for cache-dependency-path (newline-separated)
+            echo "lockfile-paths<<EOF" >> $GITHUB_OUTPUT
+            printf "%s\n" "$files" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "No lockfiles found"
+            # set empty output
+            echo "lockfile-paths=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up Node.js (with cache)
+        if: ${{ steps.find-lockfiles.outputs.lockfile-paths != '' }}
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
-          # If your repo is a monorepo or lockfiles live in subdirectories, list them here
-          cache-dependency-path: |
-            package-lock.json
-            **/package-lock.json
-            pnpm-lock.yaml
-            **/pnpm-lock.yaml
-            yarn.lock
-            **/yarn.lock
+          cache-dependency-path: ${{ steps.find-lockfiles.outputs.lockfile-paths }}
+
+      - name: Set up Node.js (no cache)
+        if: ${{ steps.find-lockfiles.outputs.lockfile-paths == '' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
       - name: Set up Python
         uses: actions/setup-python@v4
